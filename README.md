@@ -1,59 +1,41 @@
----
-title: How to use?
-description: Installation and usage guide for easy-docs.
-github: https://github.com/DarkInventor/easy-docs
----
+# Proyecto: Evaluación de Catedráticos
 
-## GitHub Repository
+Este repositorio contiene la aplicación para gestionar y evaluar catedráticos. El proyecto fue reorganizado para separar claramente la aplicación de formulario y una carpeta reservada para la API.
 
-easy-docs is an open-source project. You can find the source code and contribute to the project on GitHub:
+## Estructura
 
-* Repository: [https://github.com/DarkInventor/easy-docs](https://github.com/DarkInventor/easy-docs)
-* Issues: [https://github.com/DarkInventor/easy-docs/issues](https://github.com/DarkInventor/easy-docs/issues)
-* Pull Requests: [https://github.com/DarkInventor/easy-docs/pulls](https://github.com/DarkInventor/easy-docs/pulls)
+- `formulario/`: Aplicación Next.js con la interfaz de usuario.
+  - Rutas clave: `/` (inicio), `/evaluacion` (formulario de evaluación), `/docs` (sección de documentación si aplica).
+  - Estilos y ajustes recientes: mejora de responsividad móvil, botones numéricos más bajos y área de comentarios en gris.
 
-## Installation Guide
+- `api/`: Carpeta independiente reservada para endpoints/servicios. Actualmente contiene un `README.md` de inicio.
 
-easy-docs is a Next.js application generated with Create Fumadocs. Follow these steps to get started:
+## Requisitos
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/DarkInventor/easy-docs.git
-   cd easy-docs
-   ```
+- `Node.js >= 18`
+- `npm` o `pnpm`
 
-2. Install dependencies:
-   ```bash
-   pnpm install
-   ```
+## Instalación y ejecución (formulario)
 
-3. Run the development server:
-   ```bash
-   pnpm dev
-   ```
+```bash
+cd formulario
+npm install
+npm run dev
+```
 
-4. Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+La aplicación suele iniciar en `http://localhost:3001/` (puede variar si algún puerto está ocupado). La ruta `http://localhost:3001/evaluacion` debería cargar sin errores.
 
-## Usage
+## Despliegue y ramas
 
-After starting the development server, you can:
+- Rama principal: `main`.
+- Remoto: `origin` -> `https://github.com/dortiza2/proyecto_evaluacioncatedraticos.git`.
 
-- Edit the content in the `pages` directory to update your documentation.
-- Modify the styles in `styles/globals.css` to customize the appearance.
-- Add new pages by creating new `.mdx` files in the `pages` directory.
+## Notas de reestructuración
 
-## Learn More
+- Se movió el proyecto original a `formulario/` y se creó `api/` de forma separada.
+- Se eliminaron restos irrelevantes del nombre previo y se ajustaron estilos en la página de evaluación.
 
-To learn more about Next.js and Fumadocs, take a look at the following resources:
+## Próximos pasos
 
-* [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-* [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-* [Fumadocs](https://fumadocs.vercel.app) - learn about Fumadocs.
-
-## Contributing
-
-We welcome contributions to easy-docs! Please refer to the [CONTRIBUTING.md](https://github.com/DarkInventor/easy-docs/blob/main/CONTRIBUTING.md) file in the repository for guidelines on how to contribute.
-
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](https://github.com/DarkInventor/easy-docs/blob/main/LICENSE) file for details.
+- Definir endpoints en `api/` y su integración con `formulario`.
+- Agregar documentación técnica adicional según necesidades del curso/proyecto.
