@@ -56,6 +56,56 @@ export default function EvaluacionPage() {
   const [stats, setStats] = useState<StatRow[]>([]);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string>("");
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<keyof StatRow>("average");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [minCount, setMinCount] = useState<number>(0);
+  const [minAvg, setMinAvg] = useState<number>(0);
+
+  const displayStats = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    const filtered = stats.filter((r) => {
+      const byName = !term || r.name.toLowerCase().includes(term);
+      const byCount = (minCount || 0) <= 0 || r.count >= minCount;
+      const byAvg = (minAvg || 0) <= 0 || r.average >= minAvg;
+      return byName && byCount && byAvg;
+    });
+    const sorted = [...filtered].sort((a, b) => {
+      const va = a[sortBy];
+      const vb = b[sortBy];
+      const comp = typeof va === "number" && typeof vb === "number"
+        ? va - vb
+        : String(va).localeCompare(String(vb));
+      return sortDir === "asc" ? comp : -comp;
+    });
+    return sorted;
+  }, [stats, search, sortBy, sortDir, minCount, minAvg]);
+
+  const globalSummary = useMemo(() => {
+    const totalCount = stats.reduce((acc, r) => acc + r.count, 0);
+    const weightedSum = stats.reduce((acc, r) => acc + r.average * r.count, 0);
+    const avg = totalCount > 0 ? (weightedSum / totalCount) : 0;
+    return { totalCount, avg: avg.toFixed(2) };
+  }, [stats]);
+
+  function avgClass(n: number) {
+    if (n <= 4) return styles.avgRed;
+    if (n <= 7) return styles.avgAmber;
+    return styles.avgGreen;
+  }
+
+  function exportCSV(rows: StatRow[]) {
+    const header = ["teacher_id", "name", "average", "count"].join(",");
+    const body = rows.map((r) => [r.teacher_id, r.name, Number(r.average).toFixed(2), r.count].join(",")).join("\n");
+    const csv = header + "\n" + body;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "estadisticas.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const fingerprint_sha1 = useMemo(() => {
     try {
@@ -282,7 +332,6 @@ export default function EvaluacionPage() {
             <button className={styles.secondary} type="button" onClick={resetForm}>Limpiar</button>
             <button className={styles.secondary} type="button" onClick={() => setShowStats((v) => !v)}>Estadísticas</button>
           </div>
-          <p className={styles.avgText}>Promedio {avg}</p>
 
           {error && <p className={styles.error}>{error}</p>}
           {success && <p className={styles.success}>{success}</p>}
@@ -291,6 +340,7 @@ export default function EvaluacionPage() {
         <div className={styles.summary} aria-label="Resumen de evaluación">
           <h2 className={styles.summaryTitle}>Resumen</h2>
           <p className={styles.summaryItem}>Catedrático: {teacherId ? teacherDisplayName(teachers.find((t) => String(t.id) === String(teacherId)) || { id: "-" }) : "No seleccionado"}</p>
+          <p className={styles.summaryItem}>Promedio: {avg}</p>
           <p className={`${styles.summaryItem} ${statusClass}`}>Estado: {majorityState}</p>
           <p className={styles.summaryItem} title={comment || "(Vacío)"}>Comentario: {truncate(comment || "(Vacío)")}</p>
         </div>
@@ -298,6 +348,45 @@ export default function EvaluacionPage() {
         {showStats && (
           <div className={styles.stats} aria-label="Estadísticas de catedráticos">
             <h2 className={styles.summaryTitle}>Estadísticas</h2>
+            <div className={styles.statsControls}>
+              <input
+                className={styles.controlInput}
+                type="text"
+                placeholder="Buscar catedrático"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <label className={styles.controlLabel}>Mín. calificaciones</label>
+              <input
+                className={styles.controlInput}
+                type="number"
+                min={0}
+                value={minCount}
+                onChange={(e) => setMinCount(Number(e.target.value || 0))}
+              />
+              <label className={styles.controlLabel}>Mín. promedio</label>
+              <input
+                className={styles.controlInput}
+                type="number"
+                min={0}
+                max={10}
+                step={0.1}
+                value={minAvg}
+                onChange={(e) => setMinAvg(Number(e.target.value || 0))}
+              />
+              <label className={styles.controlLabel}>Ordenar por</label>
+              <select className={styles.controlSelect} value={sortBy} onChange={(e) => setSortBy(e.target.value as keyof StatRow)}>
+                <option value="name">Nombre</option>
+                <option value="average">Promedio</option>
+                <option value="count">Calificaciones</option>
+              </select>
+              <select className={styles.controlSelect} value={sortDir} onChange={(e) => setSortDir(e.target.value as any)}>
+                <option value="asc">Asc</option>
+                <option value="desc">Desc</option>
+              </select>
+              <button type="button" className={styles.exportBtn} onClick={() => exportCSV(displayStats)}>Exportar CSV</button>
+            </div>
+            <p className={styles.muted}>Promedio general: {globalSummary.avg} · Total evaluaciones: {globalSummary.totalCount}</p>
             {statsError && <p className={styles.error}>{statsError}</p>}
             {statsLoading ? (
               <p className={styles.muted}>Cargando estadísticas...</p>
@@ -311,10 +400,10 @@ export default function EvaluacionPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {stats.map((row) => (
+                  {displayStats.map((row) => (
                     <tr key={String(row.teacher_id)}>
                       <td>{row.name}</td>
-                      <td>{Number(row.average).toFixed(2)}</td>
+                      <td className={avgClass(row.average)}>{Number(row.average).toFixed(2)}</td>
                       <td>{row.count}</td>
                     </tr>
                   ))}
