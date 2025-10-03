@@ -89,6 +89,19 @@
 
 .avgText { margin-top: 6px; color: #374151; font-weight: 600; }
 
+.stats { margin-top: 20px; }
+.statsTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+.statsTable th, .statsTable td {
+  border: 1px solid var(--card-border);
+  padding: 8px;
+  text-align: left;
+}
+.statsTable th { background: #f3f4f6; }
+
 .summary {
   margin-top: 20px;
   border: 1px solid var(--card-border);

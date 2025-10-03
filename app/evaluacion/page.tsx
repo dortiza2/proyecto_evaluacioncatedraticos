@@ -51,6 +51,11 @@ export default function EvaluacionPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
   const [success, setSuccess] = useState<string>("");
+  const [showStats, setShowStats] = useState(false);
+  type StatRow = { teacher_id: number | string; name: string; average: number; count: number };
+  const [stats, setStats] = useState<StatRow[]>([]);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState<string>("");
 
   const fingerprint_sha1 = useMemo(() => {
     try {
@@ -82,6 +87,27 @@ export default function EvaluacionPage() {
     }
     loadTeachers();
   }, [API_URL]);
+
+  useEffect(() => {
+    async function loadStats() {
+      if (!showStats) return;
+      setStatsError("");
+      setStatsLoading(true);
+      try {
+        const useExternal = !!API_URL && /^https?:\/\//.test(API_URL);
+        const endpoint = useExternal ? `${API_URL}/stats` : "/api/stats";
+        const res = await fetch(endpoint, { cache: "no-store" });
+        if (!res.ok) throw new Error("No se pudo cargar estadísticas");
+        const data: StatRow[] = await res.json();
+        setStats(data);
+      } catch (e: any) {
+        setStatsError(e.message || "Error al cargar estadísticas");
+      } finally {
+        setStatsLoading(false);
+      }
+    }
+    loadStats();
+  }, [showStats, API_URL]);
 
   function setScore(field: keyof Scores, value: number) {
     setScores((prev) => ({ ...prev, [field]: value }));
@@ -254,8 +280,9 @@ export default function EvaluacionPage() {
           <div className={styles.actions}>
             <button className={styles.primary} type="submit" disabled={loading}>{loading ? "Enviando..." : "Enviar"}</button>
             <button className={styles.secondary} type="button" onClick={resetForm}>Limpiar</button>
+            <button className={styles.secondary} type="button" onClick={() => setShowStats((v) => !v)}>Estadísticas</button>
           </div>
-          <p className={styles.avgText}>Promedio: {avg}</p>
+          <p className={styles.avgText}>Promedio {avg}</p>
 
           {error && <p className={styles.error}>{error}</p>}
           {success && <p className={styles.success}>{success}</p>}
@@ -264,10 +291,38 @@ export default function EvaluacionPage() {
         <div className={styles.summary} aria-label="Resumen de evaluación">
           <h2 className={styles.summaryTitle}>Resumen</h2>
           <p className={styles.summaryItem}>Catedrático: {teacherId ? teacherDisplayName(teachers.find((t) => String(t.id) === String(teacherId)) || { id: "-" }) : "No seleccionado"}</p>
-          <p className={styles.summaryItem}>Promedio: {avg}</p>
           <p className={`${styles.summaryItem} ${statusClass}`}>Estado: {majorityState}</p>
           <p className={styles.summaryItem} title={comment || "(Vacío)"}>Comentario: {truncate(comment || "(Vacío)")}</p>
         </div>
+
+        {showStats && (
+          <div className={styles.stats} aria-label="Estadísticas de catedráticos">
+            <h2 className={styles.summaryTitle}>Estadísticas</h2>
+            {statsError && <p className={styles.error}>{statsError}</p>}
+            {statsLoading ? (
+              <p className={styles.muted}>Cargando estadísticas...</p>
+            ) : (
+              <table className={styles.statsTable}>
+                <thead>
+                  <tr>
+                    <th>Catedrático</th>
+                    <th>Promedio</th>
+                    <th>Calificaciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.map((row) => (
+                    <tr key={String(row.teacher_id)}>
+                      <td>{row.name}</td>
+                      <td>{Number(row.average).toFixed(2)}</td>
+                      <td>{row.count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
