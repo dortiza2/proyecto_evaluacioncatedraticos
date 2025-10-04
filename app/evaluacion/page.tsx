@@ -52,60 +52,13 @@ export default function EvaluacionPage() {
   const [error, setError] = useState<string>("");
   const [success, setSuccess] = useState<string>("");
   const [showStats, setShowStats] = useState(false);
-  type StatRow = { teacher_id: number | string; name: string; average: number; count: number };
+  type StatRow = { teacher_id: number | string; name?: string; course?: string | null; average?: number | null; grades?: number[] | null; count?: number | null };
   const [stats, setStats] = useState<StatRow[]>([]);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string>("");
-  const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<keyof StatRow>("average");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [minCount, setMinCount] = useState<number>(0);
-  const [minAvg, setMinAvg] = useState<number>(0);
+  
 
-  const displayStats = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    const filtered = stats.filter((r) => {
-      const byName = !term || r.name.toLowerCase().includes(term);
-      const byCount = (minCount || 0) <= 0 || r.count >= minCount;
-      const byAvg = (minAvg || 0) <= 0 || r.average >= minAvg;
-      return byName && byCount && byAvg;
-    });
-    const sorted = [...filtered].sort((a, b) => {
-      const va = a[sortBy];
-      const vb = b[sortBy];
-      const comp = typeof va === "number" && typeof vb === "number"
-        ? va - vb
-        : String(va).localeCompare(String(vb));
-      return sortDir === "asc" ? comp : -comp;
-    });
-    return sorted;
-  }, [stats, search, sortBy, sortDir, minCount, minAvg]);
-
-  const globalSummary = useMemo(() => {
-    const totalCount = stats.reduce((acc, r) => acc + r.count, 0);
-    const weightedSum = stats.reduce((acc, r) => acc + r.average * r.count, 0);
-    const avg = totalCount > 0 ? (weightedSum / totalCount) : 0;
-    return { totalCount, avg: avg.toFixed(2) };
-  }, [stats]);
-
-  function avgClass(n: number) {
-    if (n <= 4) return styles.avgRed;
-    if (n <= 7) return styles.avgAmber;
-    return styles.avgGreen;
-  }
-
-  function exportCSV(rows: StatRow[]) {
-    const header = ["teacher_id", "name", "average", "count"].join(",");
-    const body = rows.map((r) => [r.teacher_id, r.name, Number(r.average).toFixed(2), r.count].join(",")).join("\n");
-    const csv = header + "\n" + body;
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "estadisticas.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+  
 
   const fingerprint_sha1 = useMemo(() => {
     try {
@@ -166,8 +119,7 @@ export default function EvaluacionPage() {
   function validate(): string | null {
     if (!teacherId) return "Selecciona un catedrático";
     const values = Object.values(scores);
-    if (values.some((v) => v < 1 || v > 10)) return "Todos los criterios deben estar entre 1 y 10";
-    if (!comment || comment.trim().length < 5) return "El comentario debe tener al menos 5 caracteres";
+    if (values.some((v) => v < 1 || v > 10)) return "Por favor, contesta los 5 aspectos solicitados con un número del 1 al 10";
     return null;
   }
 
@@ -313,16 +265,14 @@ export default function EvaluacionPage() {
           <ScoreButtons label="Uso de recursos" field="uso_recursos" value={scores.uso_recursos} />
 
           <div className={styles.formRow}>
-            <label htmlFor="comment" className={styles.label}>Comentario (obligatorio)</label>
+            <label htmlFor="comment" className={styles.label}>Comentario (opcional)</label>
             <textarea
               id="comment"
               className={styles.textarea}
               rows={4}
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder="Comparte tu experiencia (mínimo 5 caracteres)"
-              required
-              minLength={5}
+              placeholder="Comparte tu experiencia (opcional)"
               maxLength={300}
             />
           </div>
@@ -348,45 +298,6 @@ export default function EvaluacionPage() {
         {showStats && (
           <div className={styles.stats} aria-label="Estadísticas de catedráticos">
             <h2 className={styles.summaryTitle}>Estadísticas</h2>
-            <div className={styles.statsControls}>
-              <input
-                className={styles.controlInput}
-                type="text"
-                placeholder="Buscar catedrático"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-              <label className={styles.controlLabel}>Mín. calificaciones</label>
-              <input
-                className={styles.controlInput}
-                type="number"
-                min={0}
-                value={minCount}
-                onChange={(e) => setMinCount(Number(e.target.value || 0))}
-              />
-              <label className={styles.controlLabel}>Mín. promedio</label>
-              <input
-                className={styles.controlInput}
-                type="number"
-                min={0}
-                max={10}
-                step={0.1}
-                value={minAvg}
-                onChange={(e) => setMinAvg(Number(e.target.value || 0))}
-              />
-              <label className={styles.controlLabel}>Ordenar por</label>
-              <select className={styles.controlSelect} value={sortBy} onChange={(e) => setSortBy(e.target.value as keyof StatRow)}>
-                <option value="name">Nombre</option>
-                <option value="average">Promedio</option>
-                <option value="count">Calificaciones</option>
-              </select>
-              <select className={styles.controlSelect} value={sortDir} onChange={(e) => setSortDir(e.target.value as any)}>
-                <option value="asc">Asc</option>
-                <option value="desc">Desc</option>
-              </select>
-              <button type="button" className={styles.exportBtn} onClick={() => exportCSV(displayStats)}>Exportar CSV</button>
-            </div>
-            <p className={styles.muted}>Promedio general: {globalSummary.avg} · Total evaluaciones: {globalSummary.totalCount}</p>
             {statsError && <p className={styles.error}>{statsError}</p>}
             {statsLoading ? (
               <p className={styles.muted}>Cargando estadísticas...</p>
@@ -395,16 +306,18 @@ export default function EvaluacionPage() {
                 <thead>
                   <tr>
                     <th>Catedrático</th>
+                    <th>Materia</th>
                     <th>Promedio</th>
                     <th>Calificaciones</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {displayStats.map((row) => (
+                  {stats.map((row) => (
                     <tr key={String(row.teacher_id)}>
-                      <td>{row.name}</td>
-                      <td className={avgClass(row.average)}>{Number(row.average).toFixed(2)}</td>
-                      <td>{row.count}</td>
+                      <td>{row.name || "N/A"}</td>
+                      <td>{row.course || "N/A"}</td>
+                      <td>{typeof row.average === "number" ? Number(row.average).toFixed(2) : "N/A"}</td>
+                      <td>{typeof row.count === "number" ? row.count : "N/A"}</td>
                     </tr>
                   ))}
                 </tbody>
