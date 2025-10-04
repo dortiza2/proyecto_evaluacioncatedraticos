@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState, FormEvent } from "react";
 import styles from "./Form.module.css";
 
-type Teacher = { id: number | string; full_name?: string; name?: string };
+type Teacher = { id: number | string; full_name?: string; name?: string; materia?: string; curso?: string };
 
 type Scores = {
   manejo_tema: number;
@@ -43,6 +43,12 @@ function truncate(text: string, max = 120): string {
 }
 
 export default function EvaluacionPage() {
+  // CONEXIÓN API-FRONTEND (CAMBIAR EN PRODUCCIÓN)
+  // Archivo: formulario/app/evaluacion/page.tsx
+  // Línea aproximada: 46 (definición de `API_URL`)
+  // Configuración actual: `process.env.NEXT_PUBLIC_API_URL`
+  // Reemplazar con: URL de producción del API (ej. `https://api.tu-dominio.com`) al desplegar
+  // Nota: También ajustar credenciales/CORS en `api/server.js` para producción
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [teacherId, setTeacherId] = useState<string | number>("");
@@ -56,6 +62,7 @@ export default function EvaluacionPage() {
   const [stats, setStats] = useState<StatRow[]>([]);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string>("");
+  // Por anonimato, no mostramos evaluaciones recientes ni comentarios/fecha
   
 
   
@@ -78,9 +85,10 @@ export default function EvaluacionPage() {
     async function loadTeachers() {
       setError("");
       try {
-        const useExternal = !!API_URL && /^https?:\/\//.test(API_URL);
-        const endpoint = useExternal ? `${API_URL}/teachers` : "/api/teachers";
-        const res = await fetch(endpoint, { cache: "no-store" });
+        if (!API_URL || !/^https?:\/\//.test(API_URL)) {
+          throw new Error("Configura NEXT_PUBLIC_API_URL para cargar catedráticos");
+        }
+        const res = await fetch(`${API_URL}/teachers`, { cache: "no-store" });
         if (!res.ok) throw new Error("No se pudo cargar catedráticos");
         const data: Teacher[] = await res.json();
         setTeachers(data);
@@ -97,9 +105,10 @@ export default function EvaluacionPage() {
       setStatsError("");
       setStatsLoading(true);
       try {
-        const useExternal = !!API_URL && /^https?:\/\//.test(API_URL);
-        const endpoint = useExternal ? `${API_URL}/stats` : "/api/stats";
-        const res = await fetch(endpoint, { cache: "no-store" });
+        if (!API_URL || !/^https?:\/\//.test(API_URL)) {
+          throw new Error("Configura NEXT_PUBLIC_API_URL para cargar estadísticas");
+        }
+        const res = await fetch(`${API_URL}/stats`, { cache: "no-store" });
         if (!res.ok) throw new Error("No se pudo cargar estadísticas");
         const data: StatRow[] = await res.json();
         setStats(data);
@@ -111,6 +120,7 @@ export default function EvaluacionPage() {
     }
     loadStats();
   }, [showStats, API_URL]);
+
 
   function setScore(field: keyof Scores, value: number) {
     setScores((prev) => ({ ...prev, [field]: value }));
@@ -142,8 +152,10 @@ export default function EvaluacionPage() {
     }
     setLoading(true);
     try {
-      const useExternal = !!API_URL && /^https?:\/\//.test(API_URL);
-      const endpoint = useExternal ? `${API_URL}/evaluations` : "/api/evaluations";
+      if (!API_URL || !/^https?:\/\//.test(API_URL)) {
+        throw new Error("Configura NEXT_PUBLIC_API_URL para enviar evaluaciones");
+      }
+      const endpoint = `${API_URL}/evaluations`;
       const payload = {
         teacher_id: typeof teacherId === "string" ? Number(teacherId) : teacherId,
         manejo_tema: scores.manejo_tema,
@@ -220,7 +232,10 @@ export default function EvaluacionPage() {
   }, [scores]);
 
   function teacherDisplayName(t: Teacher) {
-    return t.full_name || t.name || String(t.id);
+    const base = t.full_name || t.name || String(t.id);
+    const mat = t.materia ? ` — ${t.materia}` : "";
+    const cur = t.curso ? ` (${t.curso})` : "";
+    return `${base}${mat}${cur}`;
   }
 
   const statusClass = useMemo(() => {
@@ -281,6 +296,7 @@ export default function EvaluacionPage() {
             <button className={styles.primary} type="submit" disabled={loading}>{loading ? "Enviando..." : "Enviar"}</button>
             <button className={styles.secondary} type="button" onClick={resetForm}>Limpiar</button>
             <button className={styles.secondary} type="button" onClick={() => setShowStats((v) => !v)}>Estadísticas</button>
+            {/* Evaluaciones recientes removidas por anonimato */}
           </div>
 
           {error && <p className={styles.error}>{error}</p>}
@@ -292,7 +308,7 @@ export default function EvaluacionPage() {
           <p className={styles.summaryItem}>Catedrático: {teacherId ? teacherDisplayName(teachers.find((t) => String(t.id) === String(teacherId)) || { id: "-" }) : "No seleccionado"}</p>
           <p className={styles.summaryItem}>Promedio: {avg}</p>
           <p className={`${styles.summaryItem} ${statusClass}`}>Estado: {majorityState}</p>
-          <p className={styles.summaryItem} title={comment || "(Vacío)"}>Comentario: {truncate(comment || "(Vacío)")}</p>
+          {/* Comentario removido por anonimato */}
         </div>
 
         {showStats && (
@@ -325,6 +341,8 @@ export default function EvaluacionPage() {
             )}
           </div>
         )}
+
+        {/* Sección de evaluaciones recientes eliminada por anonimato */}
       </div>
     </div>
   );
