@@ -1,0 +1,1 @@
+Content docs directory placeholder

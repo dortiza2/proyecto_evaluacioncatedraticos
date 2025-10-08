@@ -1,0 +1,180 @@
+/* Copiado desde app/evaluations/Form.module.css */
+.container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0b0b0b;
+  color: #ffffff;
+  padding: 24px;
+}
+
+.card {
+  width: 100%;
+  max-width: 720px;
+  background: #111214;
+  border: 1px solid #1f2937;
+  border-radius: 16px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45), 0 2px 10px rgba(0, 0, 0, 0.25);
+  padding: 24px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+}
+
+@media (min-width: 960px) {
+  .card {
+    max-width: 1000px;
+  }
+  .grid {
+    grid-template-columns: 2fr 1fr; /* formulario + resumen */
+  }
+}
+
+.title {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+.subtitle {
+  color: #9ca3af;
+  margin-bottom: 24px;
+}
+
+.section {
+  background: #0c0d10;
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.formRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.label {
+  font-size: 14px;
+  color: #cbd5e1;
+}
+
+.select,
+.textarea {
+  width: 100%;
+  border-radius: 10px;
+  background: #0f172a;
+  border: 1px solid #283248;
+  color: #ffffff;
+  padding: 10px 12px;
+  outline: none;
+}
+
+.select:focus,
+.textarea:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+}
+
+.textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.stars {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.starButton {
+  appearance: none;
+  border: none;
+  background: transparent;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: #6b7280; /* gris */
+  transition: color 0.15s ease-in-out, transform 0.1s ease-in-out;
+}
+
+.starButton:hover {
+  color: #f59e0b; /* hover amarillo */
+  transform: translateY(-1px);
+}
+
+.starSelected {
+  color: #f59e0b; /* dorado */
+}
+
+.summaryTitle {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.summaryItem {
+  font-size: 14px;
+  color: #cbd5e1;
+  margin-bottom: 6px;
+}
+
+.averageText {
+  margin-top: 12px;
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.btnPrimary {
+  background: #2563eb; /* azul primario */
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btnPrimary:hover {
+  background: #1d4ed8;
+}
+
+.btnGhost {
+  background: transparent;
+  color: #ffffff;
+  border: 1px solid #374151; /* borde oscuro */
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btnGhost:hover {
+  background: #0f172a;
+}
+
+.error {
+  margin-top: 12px;
+  color: #fca5a5;
+}
+
+.success {
+  margin-top: 12px;
+  color: #86efac;
+}
+
+.footerNote {
+  margin-top: 16px;
+  color: #6b7280;
+  font-size: 12px;
+}
