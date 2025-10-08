@@ -10,6 +10,9 @@ export const fetchCache = "force-no-store";
 // 2) Base de API + helpers de fetch seguros
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 const API = (p: string) => `${API_BASE}/v1${p}`;
+// URL base y helper según especificación del prompt
+const API_URL = process.env.NEXT_PUBLIC_API_URL!;
+const api = (p: string) => `${API_URL}/v1${p}`;
 
 async function safeGet<T>(
   path: string,
@@ -49,6 +52,21 @@ async function safePost(
 
 type Teacher = { id: string; name: string };
 
+// Tipos para tablas de estadísticas y comentarios
+type StatRow = {
+  teacher_name: string;
+  materia: string;
+  promedio: number;
+  calificaciones: number;
+};
+type CommentRow = {
+  teacher_name: string;
+  materia?: string;
+  comentario: string;
+  promedio: number;
+  creado_en: string;
+};
+
 type Scores = {
   manejo_tema: number;
   claridad: number;
@@ -76,6 +94,9 @@ export default function EvaluationFormPage() {
   const [offline, setOffline] = useState<boolean>(!API_BASE);
   const [showStats, setShowStats] = useState<boolean>(false);
   const [showComments, setShowComments] = useState<boolean>(false);
+  const [stats, setStats] = useState<StatRow[] | null>(null);
+  const [comments, setComments] = useState<CommentRow[] | null>(null);
+  const [isBackendDown, setIsBackendDown] = useState(false);
 
   // Fingerprint opcional y simple (no invasivo)
   const fingerprint = useMemo(() => {
@@ -105,6 +126,24 @@ export default function EvaluationFormPage() {
       );
     }
     loadTeachers();
+  }, []);
+
+  // Cargar estadísticas y comentarios reales
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const rs = await fetch(api('/stats'), { cache: 'no-store' });
+        if (!rs.ok) throw 0;
+        const js = await rs.json(); if (alive) setStats(js.items);
+      } catch { if (alive) setIsBackendDown(true); }
+      try {
+        const rc = await fetch(api('/comments'), { cache: 'no-store' });
+        if (!rc.ok) throw 0;
+        const jc = await rc.json(); if (alive) setComments(jc.items);
+      } catch { if (alive) setIsBackendDown(true); }
+    };
+    load(); return () => { alive = false; };
   }, []);
 
   // Abrir secciones desde el navbar usando hash y hacer scroll
@@ -234,11 +273,9 @@ export default function EvaluationFormPage() {
             <p className={styles.subtitle}>Responde con sinceridad. Tu evaluación es anónima.</p>
 
             <div className={styles.section}>
-              {offline && (
-                <div className="rounded border p-2 bg-yellow-50" style={{marginBottom:12, color:'#111'}}>
-                  El backend no está disponible…
-                </div>
-              )}
+              {isBackendDown && (<div className="rounded border p-2 bg-yellow-50" style={{marginBottom:12, color:'#111'}}>
+                El backend no está disponible actualmente.
+              </div>)}
 
               <div className={styles.formRow}>
                 <label htmlFor="teacher" className={styles.label}>
@@ -338,7 +375,6 @@ export default function EvaluationFormPage() {
                   {showStats && (
                     <div id="stats">
                       <h3 className={styles.tableTitle}>Estadísticas</h3>
-                      <p className={styles.tableNote}>Datos de ejemplo en modo offline. Cuando haya API, se cargarán desde la vista en NEON.</p>
                       <table className={styles.table}>
                         <thead>
                           <tr>
@@ -349,21 +385,14 @@ export default function EvaluationFormPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {[
-                            { name: "Dr. Juan Pérez", course: "Sección A", avg: 7.97, votes: 6 },
-                            { name: "Ing. María Gómez", course: "Sección B", avg: 7.60, votes: 1 },
-                            { name: "Carlos Amilcar Tezo", course: "Sección A", avg: 7.00, votes: 3 },
-                          ].map((r, idx) => {
-                            const avgClass = r.avg >= 8 ? styles.badgeGreen : r.avg >= 5 ? styles.badgeYellow : styles.badgeRed;
-                            return (
-                              <tr key={idx}>
-                                <td className={styles.td}>{r.name}</td>
-                                <td className={styles.td}>{r.course}</td>
-                                <td className={styles.td}><span className={`${styles.badge} ${avgClass}`}>{r.avg.toFixed(2)}</span></td>
-                                <td className={styles.td}>{r.votes}</td>
-                              </tr>
-                            );
-                          })}
+                          {stats?.map((r, i) => (
+                            <tr key={i}>
+                              <td className={styles.td}>{r.teacher_name}</td>
+                              <td className={styles.td}>{r.materia || '—'}</td>
+                              <td className={styles.td}>{r.promedio.toFixed(2)}</td>
+                              <td className={styles.td}>{r.calificaciones}</td>
+                            </tr>
+                          )) ?? null}
                         </tbody>
                       </table>
                     </div>
@@ -371,30 +400,24 @@ export default function EvaluationFormPage() {
                   {showComments && (
                     <div id="comments">
                       <h3 className={styles.tableTitle}>Comentarios</h3>
-                      <p className={styles.tableNote}>Datos de ejemplo en modo offline. La API de IA determinará positivo/negativo y motivo.</p>
                       <table className={styles.table}>
                         <thead>
                           <tr>
                             <th className={styles.th}>Catedrático</th>
                             <th className={styles.th}>Comentario</th>
-                            <th className={styles.th}>Positivo/Negativo</th>
-                            <th className={styles.th}>Motivo</th>
+                            <th className={styles.th}>Promedio</th>
+                            <th className={styles.th}>Fecha</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {[
-                            { name: "Dr. Juan Pérez", text: "Clase muy amena, aprendí bastante.", sentiment: "Positivo", reason: "Lenguaje claro y buen manejo del tema." },
-                            { name: "Ing. María Gómez", text: "Podría mejorar sus ejemplos.", sentiment: "Negativo", reason: "Ejemplos confusos que dificultan el aprendizaje." },
-                          ].map((r, idx) => (
-                            <tr key={idx}>
-                              <td className={styles.td}>{r.name}</td>
-                              <td className={styles.td}>{r.text}</td>
-                              <td className={styles.td}>
-                                <span className={`${styles.badge} ${r.sentiment === "Positivo" ? styles.badgeGreen : styles.badgeRed}`}>{r.sentiment}</span>
-                              </td>
-                              <td className={styles.td}>{r.reason}</td>
+                          {comments?.map((r, i) => (
+                            <tr key={i}>
+                              <td className={styles.td}>{r.teacher_name}</td>
+                              <td className={styles.td}>{r.comentario}</td>
+                              <td className={styles.td}>{r.promedio.toFixed(2)}</td>
+                              <td className={styles.td}>{new Date(r.creado_en).toLocaleString()}</td>
                             </tr>
-                          ))}
+                          )) ?? null}
                         </tbody>
                       </table>
                     </div>

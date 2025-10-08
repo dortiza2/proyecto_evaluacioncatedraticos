@@ -1,6 +1,7 @@
 import './global.css';
 import { Inter } from 'next/font/google';
 import type { ReactNode } from 'react';
+export const metadata = { title: 'Evaluación de Catedráticos', icons: { icon: '/favicon.svg' } };
 
 const inter = Inter({
   subsets: ['latin'],
@@ -18,9 +19,6 @@ export default function Layout({ children }: { children: ReactNode }) {
           </nav>
         </header>
         {children}
-        {/* Favicon */}
-        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-        <link rel="alternate icon" href="/favicon.svg" />
       </body>
     </html>
   );
