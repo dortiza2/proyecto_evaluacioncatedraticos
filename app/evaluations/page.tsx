@@ -18,16 +18,30 @@ async function safeGet<T>(
   fallback: T
 ): Promise<{ ok: boolean; data: T; offline: boolean }> {
   if (!API_BASE) return { ok: false, data: fallback, offline: true };
-  try {
+  const attempt = async () => {
     const ctrl = new AbortController();
     const id = setTimeout(() => ctrl.abort(), 4000);
-    const res = await fetch(API(path), { cache: "no-store", signal: ctrl.signal });
-    clearTimeout(id);
-    if (!res.ok) return { ok: false, data: fallback, offline: true };
-    const data = (await res.json()) as T;
-    return { ok: true, data, offline: false };
+    try {
+      const res = await fetch(API(path), { cache: "no-store", signal: ctrl.signal });
+      clearTimeout(id);
+      if (!res.ok) return { ok: false, data: fallback, offline: true };
+      const data = (await res.json()) as T;
+      return { ok: true, data, offline: false };
+    } catch {
+      clearTimeout(id);
+      throw new Error("network");
+    }
+  };
+  try {
+    return await attempt();
   } catch {
-    return { ok: false, data: fallback, offline: true };
+    // pequeño backoff para cold start del backend
+    await new Promise((r) => setTimeout(r, 1200));
+    try {
+      return await attempt();
+    } catch {
+      return { ok: false, data: fallback, offline: true };
+    }
   }
 }
 
@@ -52,25 +66,17 @@ async function safePost(
 type Teacher = { id: string; name: string };
 
 // Tipos para tablas según backend (blindando tipos numéricos)
-type StatRow = {
-  docente: string;
-  materia: string;
-  promedio: number | string;
-  calificaciones: number | string;
-};
-type CommentRow = {
-  docente: string;
-  comentario: string;
-  promedio: number | string;
-  creado_en: string;
-};
+// Tipos para tablas según prompt
+type StatRow = { teacher: string; materia: string | null; promedio: number; calificaciones: number };
+type CommentRow = { teacher: string; comment: string; promedio: number; created_at: string };
 
 // Utilidades numéricas para evitar errores de toFixed()
+// Utilidades de número (por si se usan en otra parte)
 const num = (x: any): number => {
   const n = typeof x === 'number' ? x : parseFloat(String(x ?? ''));
   return Number.isFinite(n) ? n : 0;
 };
-const fmt2 = (x: any) => num(x).toFixed(2);
+const fmt2 = (x: any) => Number(num(x)).toFixed(2);
 
 type Scores = {
   manejo_tema: number;
@@ -96,12 +102,13 @@ export default function EvaluationFormPage() {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const [success, setSuccess] = useState<string>("");
-  const [offline, setOffline] = useState<boolean>(!API_BASE);
+  // Se evita mostrar mensajes de "modo offline" en UI; se mantiene lógica segura
+  const [offline] = useState<boolean>(!API_BASE);
   const [showStats, setShowStats] = useState<boolean>(false);
   const [showComments, setShowComments] = useState<boolean>(false);
   const [stats, setStats] = useState<StatRow[] | null>(null);
   const [comments, setComments] = useState<CommentRow[] | null>(null);
-  const [isBackendDown, setIsBackendDown] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0); // para recargar tras enviar
 
   // Fingerprint opcional y simple (no invasivo)
   const fingerprint = useMemo(() => {
@@ -121,7 +128,6 @@ export default function EvaluationFormPage() {
     async function loadTeachers() {
       setError("");
       const r = await safeGet<Array<{ id: number; nombre_catedratico: string }>>("/teachers", []);
-      setOffline(r.offline);
       if (!r.ok) {
         setTeachers([]);
         return;
@@ -133,39 +139,65 @@ export default function EvaluationFormPage() {
     loadTeachers();
   }, []);
 
-  // Cargar estadísticas y comentarios reales (arrays directos del backend)
+  // Cargar estadísticas y comentarios reales (arrays directos del backend), refrescando por refreshKey
   useEffect(() => {
     let alive = true;
-    async function loadStats() {
+    (async () => {
       try {
-        const r = await fetch(api('/stats'), { cache: 'no-store' });
-        if (!r.ok) throw new Error('stats');
-        const j = await r.json();
+        // con reintento simple para cold start
+        const fetchStats = async () => {
+          try {
+            const r = await fetch(api('/stats'), { cache: 'no-store' });
+            if (!r.ok) throw new Error('bad');
+            return await r.json();
+          } catch {
+            await new Promise((r) => setTimeout(r, 1200));
+            const r2 = await fetch(api('/stats'), { cache: 'no-store' });
+            if (!r2.ok) throw new Error('bad');
+            return await r2.json();
+          }
+        };
+        const data = await fetchStats();
         if (!alive) return;
-        setStats(Array.isArray(j) ? j : []);
-        setIsBackendDown(false);
+        setStats(Array.isArray(data) ? data.map((d: any) => ({
+          teacher: d.teacher,
+          materia: d.materia ?? null,
+          promedio: Number(d.promedio),
+          calificaciones: Number(d.calificaciones),
+        })) : []);
       } catch {
         if (!alive) return;
         setStats([]);
-        setIsBackendDown(true);
       }
-    }
-    async function loadComments() {
+
       try {
-        const r = await fetch(api('/comments'), { cache: 'no-store' });
-        if (!r.ok) throw new Error('comments');
-        const j = await r.json();
+        const fetchComments = async () => {
+          try {
+            const r2 = await fetch(api('/comments'), { cache: 'no-store' });
+            if (!r2.ok) throw new Error('bad');
+            return await r2.json();
+          } catch {
+            await new Promise((r) => setTimeout(r, 1200));
+            const r3 = await fetch(api('/comments'), { cache: 'no-store' });
+            if (!r3.ok) throw new Error('bad');
+            return await r3.json();
+          }
+        };
+        const data2 = await fetchComments();
         if (!alive) return;
-        setComments(Array.isArray(j) ? j : []);
+        setComments(Array.isArray(data2) ? data2.map((d: any) => ({
+          teacher: d.teacher,
+          comment: d.comment,
+          promedio: Number(d.promedio),
+          created_at: d.created_at,
+        })) : []);
       } catch {
         if (!alive) return;
         setComments([]);
       }
-    }
-    loadStats();
-    loadComments();
+    })();
     return () => { alive = false; };
-  }, []);
+  }, [refreshKey]);
 
   // Abrir secciones desde el navbar usando hash y hacer scroll
   useEffect(() => {
@@ -216,10 +248,7 @@ export default function EvaluationFormPage() {
     e.preventDefault();
     setError("");
     setSuccess("");
-    if (offline) {
-      alert("Backend no disponible");
-      return;
-    }
+    // No se muestran banners/alerts de backend caído en producción
     const message = validate();
     if (message) {
       setError(message);
@@ -241,13 +270,15 @@ export default function EvaluationFormPage() {
       };
       const r = await safePost("/evaluations", payload);
       if (!r.ok) {
-        alert("Backend no disponible");
+        setError("Error al enviar la evaluación");
         return;
       }
       
       // éxito
       setSuccess("¡Evaluación enviada! Gracias por tu aporte anónimo.");
       resetForm();
+      // Forzar refresh de comentarios/estadísticas tras envío
+      setRefreshKey((k) => k + 1);
     } catch {
       setError("Error al enviar la evaluación");
     } finally {
@@ -294,9 +325,7 @@ export default function EvaluationFormPage() {
             <p className={styles.subtitle}>Responde con sinceridad. Tu evaluación es anónima.</p>
 
             <div className={styles.section}>
-              {isBackendDown && (<div className="rounded border p-2 bg-yellow-50" style={{marginBottom:12, color:'#111'}}>
-                El backend no está disponible actualmente.
-              </div>)}
+              {/* Mensajes de backend caído removidos según prompt */}
 
               <div className={styles.formRow}>
                 <label htmlFor="teacher" className={styles.label}>
@@ -314,7 +343,7 @@ export default function EvaluationFormPage() {
                   </option>
                   {teachers.length === 0 ? (
                     <option value="" disabled>
-                      {offline ? "Sin conexión al backend" : "Sin datos"}
+                      {"Sin datos"}
                     </option>
                   ) : (
                     teachers.map((t) => (
@@ -396,11 +425,6 @@ export default function EvaluationFormPage() {
                   {showStats && (
                     <div id="stats">
                       <h3 className={styles.tableTitle}>Estadísticas</h3>
-                      {isBackendDown && (
-                        <div className="rounded border p-2 bg-yellow-50" style={{marginBottom:12, color:'#111'}}>
-                          El backend no está disponible temporalmente.
-                        </div>
-                      )}
                       <table className={styles.table}>
                         <thead>
                           <tr>
@@ -411,15 +435,14 @@ export default function EvaluationFormPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {(stats ?? []).map((s, i) => (
+                          {stats && stats.length > 0 ? stats.map((s, i) => (
                             <tr key={i}>
-                              <td className={styles.td}>{s.docente}</td>
-                              <td className={styles.td}>{s.materia}</td>
-                              <td className={styles.td}><span className={`${styles.badge}`}>{fmt2(s.promedio)}</span></td>
-                              <td className={styles.td}>{num(s.calificaciones)}</td>
+                              <td className={styles.td}>{s.teacher}</td>
+                              <td className={styles.td}>{s.materia ?? '—'}</td>
+                              <td className={styles.td}><span className={`${styles.badge}`}>{Number(s.promedio).toFixed(2)}</span></td>
+                              <td className={styles.td}>{s.calificaciones}</td>
                             </tr>
-                          ))}
-                          {stats && stats.length === 0 && (
+                          )) : (
                             <tr><td className={styles.td} colSpan={4}>Sin datos.</td></tr>
                           )}
                         </tbody>
@@ -439,15 +462,14 @@ export default function EvaluationFormPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {(comments ?? []).map((c, i) => (
+                          {comments && comments.length > 0 ? comments.map((c, i) => (
                             <tr key={i}>
-                              <td className={styles.td}>{c.docente}</td>
-                              <td className={styles.td}>{c.comentario}</td>
-                              <td className={styles.td}><span className={`${styles.badge}`}>{fmt2(c.promedio)}</span></td>
-                              <td className={styles.td}>{new Date(c.creado_en).toLocaleString()}</td>
+                              <td className={styles.td}>{c.teacher}</td>
+                              <td className={styles.td}>{c.comment}</td>
+                              <td className={styles.td}><span className={`${styles.badge}`}>{Number(c.promedio).toFixed(2)}</span></td>
+                              <td className={styles.td}>{new Date(c.created_at).toLocaleString()}</td>
                             </tr>
-                          ))}
-                          {comments && comments.length === 0 && (
+                          )) : (
                             <tr><td className={styles.td} colSpan={4}>Sin comentarios.</td></tr>
                           )}
                         </tbody>

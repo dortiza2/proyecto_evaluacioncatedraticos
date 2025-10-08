@@ -1,7 +1,7 @@
 import './global.css';
 import { Inter } from 'next/font/google';
 import type { ReactNode } from 'react';
-export const metadata = { title: 'Evaluación de Catedráticos', icons: { icon: '/favicon.svg' } };
+export const metadata = { title: 'Evaluaciones Catedráticos', icons: { icon: '/favicon.svg' } };
 
 const inter = Inter({
   subsets: ['latin'],
