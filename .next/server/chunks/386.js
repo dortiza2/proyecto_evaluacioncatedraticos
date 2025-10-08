@@ -1,0 +1,1 @@
+"use strict";exports.id=386,exports.ids=[386],exports.modules={4386:(e,t,o)=>{o.r(t),o.d(t,{default:()=>r});let r=(0,o(8570).createProxy)(String.raw`/Users/davidortiz/Documents/Proyectos VS/Seminario 3/front/node_modules/fumadocs-ui/dist/toc-clerk-CAID2WGC.js#default`)}};
