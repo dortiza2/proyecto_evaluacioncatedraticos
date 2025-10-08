@@ -1,3 +1,14 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+html, body {
+  min-height: 100vh;
+}
+
+/* Fondo global: gradiente rojo monocromático suave, diferente al botón enviar (#ef4444) */
+body {
+  background: linear-gradient(135deg, #8b0000 0%, #b21515 20%, #d21f1f 40%, #e52727 60%, #f04545 80%, #f76a6a 100%);
+  /* Colores de texto por defecto para contraste */
+  color: #111111;
+}

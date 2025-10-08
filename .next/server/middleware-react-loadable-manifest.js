@@ -1,1 +1,1 @@
-self.__REACT_LOADABLE_MANIFEST='{"node_modules/fumadocs-ui/dist/provider.js -> ./components/dialog/search-default.js":{"id":1971,"files":["static/chunks/253-b3b1720623000eba.js","static/chunks/756.24e1c33329f596aa.js"]}}';
+self.__REACT_LOADABLE_MANIFEST="{}"

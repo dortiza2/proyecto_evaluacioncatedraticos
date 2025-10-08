@@ -74,6 +74,8 @@ export default function EvaluationFormPage() {
   const [error, setError] = useState<string>("");
   const [success, setSuccess] = useState<string>("");
   const [offline, setOffline] = useState<boolean>(!API_BASE);
+  const [showStats, setShowStats] = useState<boolean>(false);
+  const [showComments, setShowComments] = useState<boolean>(false);
 
   // Fingerprint opcional y simple (no invasivo)
   const fingerprint = useMemo(() => {
@@ -92,18 +94,45 @@ export default function EvaluationFormPage() {
   useEffect(() => {
     async function loadTeachers() {
       setError("");
-      const r = await safeGet<Array<{ id: string; name: string }>>("/teachers", []);
+      const r = await safeGet<Array<{ id: number; nombre_catedratico: string }>>("/teachers", []);
       setOffline(r.offline);
       if (!r.ok) {
         setTeachers([]);
         return;
       }
-      setTeachers(r.data);
+      setTeachers(
+        r.data.map((t) => ({ id: String(t.id), name: t.nombre_catedratico }))
+      );
     }
     loadTeachers();
   }, []);
 
-  function setStar(field: keyof Scores, value: number) {
+  // Abrir secciones desde el navbar usando hash y hacer scroll
+  useEffect(() => {
+    function handleHash() {
+      const hash = typeof window !== 'undefined' ? window.location.hash : '';
+      if (hash === '#stats') {
+        setShowStats(true);
+        setShowComments(false);
+        setTimeout(() => {
+          const el = document.getElementById('stats');
+          el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 0);
+      } else if (hash === '#comments') {
+        setShowComments(true);
+        setShowStats(false);
+        setTimeout(() => {
+          const el = document.getElementById('comments');
+          el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 0);
+      }
+    }
+    handleHash();
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
+
+  function setScore(field: keyof Scores, value: number) {
     setScores((prev) => ({ ...prev, [field]: value }));
   }
 
@@ -118,8 +147,8 @@ export default function EvaluationFormPage() {
   function validate(): string | null {
     if (!teacherId) return "Selecciona un catedrático";
     const values = Object.values(scores);
-    if (values.some((v) => v < 1 || v > 5)) return "Todas las calificaciones deben ser entre 1 y 5";
-    if (!comment || comment.trim().length < 5) return "El comentario debe tener al menos 5 caracteres";
+    if (values.some((v) => v < 1 || v > 10)) return "Todas las calificaciones deben ser entre 1 y 10";
+    if (comment && comment.trim().length > 0 && comment.trim().length < 5) return "El comentario debe tener al menos 5 caracteres si lo ingresas";
     return null;
   }
 
@@ -128,7 +157,7 @@ export default function EvaluationFormPage() {
     setError("");
     setSuccess("");
     if (offline) {
-      alert("Backend no disponible. Intenta más tarde.");
+      alert("Backend no disponible");
       return;
     }
     const message = validate();
@@ -138,15 +167,21 @@ export default function EvaluationFormPage() {
     }
     setLoading(true);
     try {
+      const average = (
+        (scores.manejo_tema + scores.claridad + scores.dominio + scores.interaccion + scores.recursos) / 5
+      );
+      const average_state = average >= 8 ? "EXCELENTE" : average >= 5 ? "BUENO" : "DEBE_MEJORAR";
       const payload = {
         teacher_id: teacherId,
         ...scores,
         comment: (comment ?? "").trim() || undefined,
+        average,
+        average_state,
         fingerprint,
       };
       const r = await safePost("/evaluations", payload);
       if (!r.ok) {
-        alert(r.offline ? "Backend no disponible. Intenta más tarde." : `Error ${r.status || ""}`);
+        alert("Backend no disponible");
         return;
       }
       
@@ -160,30 +195,29 @@ export default function EvaluationFormPage() {
     }
   }
 
-  function StarRating({
-    label,
-    field,
-    value,
-  }: {
-    label: string;
-    field: keyof Scores;
-    value: number;
-  }) {
+  function rangeClass(n: number) {
+    if (n >= 8) return styles.scoreGreen;
+    if (n >= 5) return styles.scoreYellow;
+    if (n >= 1) return styles.scoreRed;
+    return "";
+  }
+
+  function ScoreRow({ label, field, value }: { label: string; field: keyof Scores; value: number }) {
     return (
       <div className={styles.formRow}>
         <label className={styles.label}>{label}</label>
-        <div className={styles.stars} role="radiogroup" aria-label={label}>
-          {[1, 2, 3, 4, 5].map((n) => (
+        <div className={styles.scores} role="radiogroup" aria-label={label}>
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
             <button
               key={n}
               type="button"
               role="radio"
               aria-checked={value === n}
-              aria-label={`${label} ${n} estrellas`}
-              className={`${styles.starButton} ${n <= value ? styles.starSelected : ""}`}
-              onClick={() => setStar(field, n)}
+              aria-label={`${label} ${n}`}
+              className={`${styles.scoreBtn} ${value === n ? `${styles.scoreSelected} ${rangeClass(n)}` : ""}`}
+              onClick={() => setScore(field, n)}
             >
-              ★
+              {n}
             </button>
           ))}
         </div>
@@ -201,8 +235,8 @@ export default function EvaluationFormPage() {
 
             <div className={styles.section}>
               {offline && (
-                <div style={{padding:'8px', background:'#fff3cd', border:'1px solid #ffeeba', borderRadius:8, marginBottom:12, color:'#111'}}>
-                  El backend no está disponible. Puedes ver la UI, pero no se cargarán datos.
+                <div className="rounded border p-2 bg-yellow-50" style={{marginBottom:12, color:'#111'}}>
+                  El backend no está disponible…
                 </div>
               )}
 
@@ -234,15 +268,15 @@ export default function EvaluationFormPage() {
                 </select>
               </div>
 
-              <StarRating label="Manejo del tema" field="manejo_tema" value={scores.manejo_tema} />
-              <StarRating label="Claridad al explicar" field="claridad" value={scores.claridad} />
-              <StarRating label="Dominio de la clase" field="dominio" value={scores.dominio} />
-              <StarRating label="Interacción con estudiantes" field="interaccion" value={scores.interaccion} />
-              <StarRating label="Uso de recursos" field="recursos" value={scores.recursos} />
+              <ScoreRow label="Manejo del tema" field="manejo_tema" value={scores.manejo_tema} />
+              <ScoreRow label="Claridad al explicar" field="claridad" value={scores.claridad} />
+              <ScoreRow label="Dominio de la clase" field="dominio" value={scores.dominio} />
+              <ScoreRow label="Interacción con estudiantes" field="interaccion" value={scores.interaccion} />
+              <ScoreRow label="Uso de recursos" field="recursos" value={scores.recursos} />
 
               <div className={styles.formRow}>
                 <label htmlFor="comment" className={styles.label}>
-                  Comentario (obligatorio)
+                  Comentario (opcional)
                 </label>
                 <textarea
                   id="comment"
@@ -250,9 +284,7 @@ export default function EvaluationFormPage() {
                   rows={4}
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
-                  placeholder="Comparte tu experiencia (mínimo 5 caracteres)"
-                  required
-                  minLength={5}
+                  placeholder="Comparte tu experiencia (mínimo 5 caracteres si lo incluyes)"
                 />
               </div>
 
@@ -263,47 +295,116 @@ export default function EvaluationFormPage() {
                 <button className={styles.btnGhost} type="button" onClick={resetForm}>
                   Limpiar
                 </button>
+                <button className={styles.btnSecondary} type="button" onClick={() => { setShowStats((s) => !s); setShowComments(false); }}>
+                  Estadísticas
+                </button>
+                <button className={styles.btnSecondary} type="button" onClick={() => { setShowComments((s) => !s); setShowStats(false); }}>
+                  Comentarios
+                </button>
               </div>
 
-              <p className={styles.averageText}>
-                Promedio: {(
-                  (scores.manejo_tema +
-                    scores.claridad +
-                    scores.dominio +
-                    scores.interaccion +
-                    scores.recursos) /
-                  5
-                ).toFixed(1)}
-              </p>
+              {/* Promedio superior eliminado; se mantiene sólo en el bloque de Resumen */}
 
               {error && <p className={styles.error}>{error}</p>}
               {success && <p className={styles.success}>{success}</p>}
 
-              <p className={styles.footerNote}>
-                Nota: Se puede enviar un fingerprint anónimo para mejorar la integridad del sistema.
-              </p>
+              {/* Nota de fingerprint eliminada */}
+
+              {/* Resumen debajo de los botones */}
+              <div className={styles.section} aria-label="Resumen de evaluación" style={{marginTop:12}}>
+                <h2 className={styles.summaryTitle}>Resumen</h2>
+                <p className={styles.summaryItem}>
+                  Catedrático: {teacherId ? teachers.find((t) => t.id === teacherId)?.name : "No seleccionado"}
+                </p>
+                {(() => {
+                  const avg = (
+                    (scores.manejo_tema + scores.claridad + scores.dominio + scores.interaccion + scores.recursos) / 5
+                  );
+                  const avgClass = avg >= 8 ? styles.avgGreen : avg >= 5 ? styles.avgYellow : styles.avgRed;
+                  const label = avg >= 8 ? "EXCELENTE" : avg >= 5 ? "BUENO PERO PUEDE MEJORAR" : "DEBE MEJORAR";
+                  return (
+                    <p className={`${styles.summaryItem} ${avgClass}`}>
+                      Promedio: {avg.toFixed(2)} — Estado: {label}
+                    </p>
+                  );
+                })()}
+                <p className={styles.summaryItem}>
+                  Comentario: {comment ? comment : "(Vacío)"}
+                </p>
+              </div>
+
+              {(showStats || showComments) && (
+                <div className={styles.tablesWrapper}>
+                  {showStats && (
+                    <div id="stats">
+                      <h3 className={styles.tableTitle}>Estadísticas</h3>
+                      <p className={styles.tableNote}>Datos de ejemplo en modo offline. Cuando haya API, se cargarán desde la vista en NEON.</p>
+                      <table className={styles.table}>
+                        <thead>
+                          <tr>
+                            <th className={styles.th}>Catedrático</th>
+                            <th className={styles.th}>Materia</th>
+                            <th className={styles.th}>Promedio</th>
+                            <th className={styles.th}>Calificaciones</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[
+                            { name: "Dr. Juan Pérez", course: "Sección A", avg: 7.97, votes: 6 },
+                            { name: "Ing. María Gómez", course: "Sección B", avg: 7.60, votes: 1 },
+                            { name: "Carlos Amilcar Tezo", course: "Sección A", avg: 7.00, votes: 3 },
+                          ].map((r, idx) => {
+                            const avgClass = r.avg >= 8 ? styles.badgeGreen : r.avg >= 5 ? styles.badgeYellow : styles.badgeRed;
+                            return (
+                              <tr key={idx}>
+                                <td className={styles.td}>{r.name}</td>
+                                <td className={styles.td}>{r.course}</td>
+                                <td className={styles.td}><span className={`${styles.badge} ${avgClass}`}>{r.avg.toFixed(2)}</span></td>
+                                <td className={styles.td}>{r.votes}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {showComments && (
+                    <div id="comments">
+                      <h3 className={styles.tableTitle}>Comentarios</h3>
+                      <p className={styles.tableNote}>Datos de ejemplo en modo offline. La API de IA determinará positivo/negativo y motivo.</p>
+                      <table className={styles.table}>
+                        <thead>
+                          <tr>
+                            <th className={styles.th}>Catedrático</th>
+                            <th className={styles.th}>Comentario</th>
+                            <th className={styles.th}>Positivo/Negativo</th>
+                            <th className={styles.th}>Motivo</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[
+                            { name: "Dr. Juan Pérez", text: "Clase muy amena, aprendí bastante.", sentiment: "Positivo", reason: "Lenguaje claro y buen manejo del tema." },
+                            { name: "Ing. María Gómez", text: "Podría mejorar sus ejemplos.", sentiment: "Negativo", reason: "Ejemplos confusos que dificultan el aprendizaje." },
+                          ].map((r, idx) => (
+                            <tr key={idx}>
+                              <td className={styles.td}>{r.name}</td>
+                              <td className={styles.td}>{r.text}</td>
+                              <td className={styles.td}>
+                                <span className={`${styles.badge} ${r.sentiment === "Positivo" ? styles.badgeGreen : styles.badgeRed}`}>{r.sentiment}</span>
+                              </td>
+                              <td className={styles.td}>{r.reason}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </form>
 
-          <aside className={styles.section} aria-label="Resumen de evaluación">
-            <h2 className={styles.summaryTitle}>Resumen</h2>
-            <p className={styles.summaryItem}>
-              Catedrático: {teacherId ? teachers.find((t) => t.id === teacherId)?.name : "No seleccionado"}
-            </p>
-            <p className={styles.summaryItem}>
-              Promedio: {(
-                (scores.manejo_tema +
-                  scores.claridad +
-                  scores.dominio +
-                  scores.interaccion +
-                  scores.recursos) /
-                5
-              ).toFixed(1)}
-            </p>
-            <p className={styles.summaryItem}>
-              Comentario: {comment ? comment : "(Vacío)"}
-            </p>
-          </aside>
+          {/* Resumen lateral eliminado; el resumen ahora se muestra debajo de los botones */}
         </div>
       </div>
     </main>

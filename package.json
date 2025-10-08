@@ -5,25 +5,26 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
+    "dev:3002": "next dev -p 3002",
+    "dev:remote": "cross-env NEXT_PUBLIC_API_URL=https://proyecto-evaluacioncatedraticos-back.onrender.com next dev",
+    "dev:remote:3002": "cross-env NEXT_PUBLIC_API_URL=https://proyecto-evaluacioncatedraticos-back.onrender.com next dev -p 3002",
+    "dev:local-api": "cross-env NEXT_PUBLIC_API_URL=http://localhost:4000 next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "postinstall": "fumadocs-mdx"
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "engines": {
-    "node": ">=18.18.0 <23.0.0"
+    "node": ">=18 <23"
   },
   "dependencies": {
-    "fumadocs-core": "^13.2.1",
-    "fumadocs-mdx": "^10.0.2",
-    "fumadocs-ui": "^13.3.2",
     "next": "^14.2.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/node": "^22.9.0",
+    "cross-env": "^7.0.3",
+    "@types/node": "^20.0.0",
     "@types/react": "19.2.2",
     "autoprefixer": "^10.4.16",
     "postcss": "^8.4.31",

@@ -1,1 +1,0 @@
-"use strict";exports.id=906,exports.ids=[906],exports.modules={6906:(e,t,o)=>{o.r(t),o.d(t,{default:()=>s});let s=(0,o(8570).createProxy)(String.raw`/Users/davidortiz/Documents/Proyectos VS/Seminario 3/front/node_modules/fumadocs-ui/dist/edit-on-github-YFVYCMB7.js#default`)}};
