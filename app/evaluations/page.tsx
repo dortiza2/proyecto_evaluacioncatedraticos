@@ -2,8 +2,50 @@
 
 import { useEffect, useMemo, useState } from "react";
 import styles from "./Form.module.css";
-const API_URL = process.env.NEXT_PUBLIC_API_URL as string;
-if (!API_URL) throw new Error("NEXT_PUBLIC_API_URL no configurada");
+
+// 1) Configuración Next: evitar contacto con BACK en build
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
+
+// 2) Base de API + helpers de fetch seguros
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+const API = (p: string) => `${API_BASE}/v1${p}`;
+
+async function safeGet<T>(
+  path: string,
+  fallback: T
+): Promise<{ ok: boolean; data: T; offline: boolean }> {
+  if (!API_BASE) return { ok: false, data: fallback, offline: true };
+  try {
+    const ctrl = new AbortController();
+    const id = setTimeout(() => ctrl.abort(), 4000);
+    const res = await fetch(API(path), { cache: "no-store", signal: ctrl.signal });
+    clearTimeout(id);
+    if (!res.ok) return { ok: false, data: fallback, offline: true };
+    const data = (await res.json()) as T;
+    return { ok: true, data, offline: false };
+  } catch {
+    return { ok: false, data: fallback, offline: true };
+  }
+}
+
+async function safePost(
+  path: string,
+  body: any
+): Promise<{ ok: boolean; offline: boolean; status?: number }> {
+  if (!API_BASE) return { ok: false, offline: true };
+  try {
+    const res = await fetch(API(path), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    return { ok: res.ok, offline: false, status: res.status };
+  } catch {
+    return { ok: false, offline: true };
+  }
+}
 
 type Teacher = { id: string; name: string };
 
@@ -31,6 +73,7 @@ export default function EvaluationFormPage() {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const [success, setSuccess] = useState<string>("");
+  const [offline, setOffline] = useState<boolean>(!API_BASE);
 
   // Fingerprint opcional y simple (no invasivo)
   const fingerprint = useMemo(() => {
@@ -48,16 +91,14 @@ export default function EvaluationFormPage() {
 
   useEffect(() => {
     async function loadTeachers() {
-      try {
-        setError("");
-        const endpoint = `${API_URL}/v1/teachers`;
-        const res = await fetch(endpoint, { cache: "no-store" });
-        if (!res.ok) throw new Error("No se pudo cargar la lista de catedráticos");
-        const data: Teacher[] = await res.json();
-        setTeachers(data);
-      } catch (e: any) {
-        setError(e.message || "Error al cargar docentes");
+      setError("");
+      const r = await safeGet<Array<{ id: string; name: string }>>("/teachers", []);
+      setOffline(r.offline);
+      if (!r.ok) {
+        setTeachers([]);
+        return;
       }
+      setTeachers(r.data);
     }
     loadTeachers();
   }, []);
@@ -86,6 +127,10 @@ export default function EvaluationFormPage() {
     e.preventDefault();
     setError("");
     setSuccess("");
+    if (offline) {
+      alert("Backend no disponible. Intenta más tarde.");
+      return;
+    }
     const message = validate();
     if (message) {
       setError(message);
@@ -99,17 +144,17 @@ export default function EvaluationFormPage() {
         comment: (comment ?? "").trim() || undefined,
         fingerprint,
       };
-      const endpoint = `${API_URL}/v1/evaluations`;
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error("No se pudo enviar la evaluación");
+      const r = await safePost("/evaluations", payload);
+      if (!r.ok) {
+        alert(r.offline ? "Backend no disponible. Intenta más tarde." : `Error ${r.status || ""}`);
+        return;
+      }
+      
+      // éxito
       setSuccess("¡Evaluación enviada! Gracias por tu aporte anónimo.");
       resetForm();
-    } catch (e: any) {
-      setError(e.message || "Error al enviar la evaluación");
+    } catch {
+      setError("Error al enviar la evaluación");
     } finally {
       setLoading(false);
     }
@@ -155,6 +200,12 @@ export default function EvaluationFormPage() {
             <p className={styles.subtitle}>Responde con sinceridad. Tu evaluación es anónima.</p>
 
             <div className={styles.section}>
+              {offline && (
+                <div style={{padding:'8px', background:'#fff3cd', border:'1px solid #ffeeba', borderRadius:8, marginBottom:12, color:'#111'}}>
+                  El backend no está disponible. Puedes ver la UI, pero no se cargarán datos.
+                </div>
+              )}
+
               <div className={styles.formRow}>
                 <label htmlFor="teacher" className={styles.label}>
                   Catedrático
@@ -169,11 +220,17 @@ export default function EvaluationFormPage() {
                   <option value="" disabled>
                     Selecciona un catedrático
                   </option>
-                  {teachers.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
+                  {teachers.length === 0 ? (
+                    <option value="" disabled>
+                      {offline ? "Sin conexión al backend" : "Sin datos"}
                     </option>
-                  ))}
+                  ) : (
+                    teachers.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
 
@@ -200,7 +257,7 @@ export default function EvaluationFormPage() {
               </div>
 
               <div className={styles.actions}>
-                <button className={styles.btnPrimary} type="submit" disabled={loading}>
+                <button className={styles.btnPrimary} type="submit" disabled={loading || offline}>
                   {loading ? "Enviando..." : "Enviar"}
                 </button>
                 <button className={styles.btnGhost} type="button" onClick={resetForm}>
