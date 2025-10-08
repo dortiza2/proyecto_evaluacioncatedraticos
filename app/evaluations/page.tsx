@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import styles from "./Form.module.css";
+const API_URL = process.env.NEXT_PUBLIC_API_URL as string;
+if (!API_URL) throw new Error("NEXT_PUBLIC_API_URL no configurada");
 
 type Teacher = { id: string; name: string };
 
@@ -22,7 +24,6 @@ const initialScores: Scores = {
 };
 
 export default function EvaluationFormPage() {
-  const API_BASE = process.env.NEXT_PUBLIC_API_BASE || ""; // opcional
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [teacherId, setTeacherId] = useState<string>("");
   const [scores, setScores] = useState<Scores>(initialScores);
@@ -49,8 +50,7 @@ export default function EvaluationFormPage() {
     async function loadTeachers() {
       try {
         setError("");
-        const useExternal = !!API_BASE && /^https?:\/\//.test(API_BASE);
-        const endpoint = useExternal ? `${API_BASE}/teachers` : "/api/teachers";
+        const endpoint = `${API_URL}/v1/teachers`;
         const res = await fetch(endpoint, { cache: "no-store" });
         if (!res.ok) throw new Error("No se pudo cargar la lista de catedráticos");
         const data: Teacher[] = await res.json();
@@ -96,11 +96,10 @@ export default function EvaluationFormPage() {
       const payload = {
         teacher_id: teacherId,
         ...scores,
-        comentario: comment.trim(),
+        comment: (comment ?? "").trim() || undefined,
         fingerprint,
       };
-      const useExternal = !!API_BASE && /^https?:\/\//.test(API_BASE);
-      const endpoint = useExternal ? `${API_BASE}/evaluations` : "/api/evaluations";
+      const endpoint = `${API_URL}/v1/evaluations`;
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
