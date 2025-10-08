@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { analyzeSentimentViaAPI, type SentimentResult } from '@/app/lib/sentiment';
 import styles from "./Form.module.css";
 
 // 1) Configuración Next: evitar contacto con BACK en build
@@ -109,6 +110,8 @@ export default function EvaluationFormPage() {
   const [stats, setStats] = useState<StatRow[] | null>(null);
   const [comments, setComments] = useState<CommentRow[] | null>(null);
   const [refreshKey, setRefreshKey] = useState(0); // para recargar tras enviar
+  const [enriched, setEnriched] = useState<Record<number, SentimentResult>>({});
+  const [enriching, setEnriching] = useState(false);
 
   // Fingerprint opcional y simple (no invasivo)
   const fingerprint = useMemo(() => {
@@ -198,6 +201,30 @@ export default function EvaluationFormPage() {
     })();
     return () => { alive = false; };
   }, [refreshKey]);
+
+  // Enriquecer comentarios con sentimiento llamando al util
+  useEffect(() => {
+    if (!comments || !comments.length) { setEnriched({}); return; }
+    let alive = true; setEnriching(true);
+    (async () => {
+      const out: Record<number, SentimentResult> = {};
+      const queue = comments.map((row, idx) => ({ idx, text: (row as any).comentario ?? row.comment ?? '' }));
+      let i = 0;
+      const run = async () => {
+        while (i < queue.length && alive) {
+          const current = i++;
+          const { idx, text } = queue[current];
+          out[idx] = await analyzeSentimentViaAPI(api, text);
+          if (!alive) return;
+          setEnriched(prev => ({ ...prev, [idx]: out[idx] }));
+          await new Promise(r => setTimeout(r, 60));
+        }
+      };
+      await Promise.all([run(), run()]);
+      if (alive) setEnriching(false);
+    })();
+    return () => { alive = false; };
+  }, [comments]);
 
   // Abrir secciones desde el navbar usando hash y hacer scroll
   useEffect(() => {
@@ -451,29 +478,48 @@ export default function EvaluationFormPage() {
                   )}
                   {showComments && (
                     <div id="comments">
-                      <h3 className={styles.tableTitle}>Comentarios</h3>
-                      <table className={styles.table}>
-                        <thead>
-                          <tr>
-                            <th className={styles.th}>Catedrático</th>
-                            <th className={styles.th}>Comentario</th>
-                            <th className={styles.th}>Promedio</th>
-                            <th className={styles.th}>Fecha</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {comments && comments.length > 0 ? comments.map((c, i) => (
-                            <tr key={i}>
-                              <td className={styles.td}>{c.teacher}</td>
-                              <td className={styles.td}>{c.comment}</td>
-                              <td className={styles.td}><span className={`${styles.badge}`}>{Number(c.promedio).toFixed(2)}</span></td>
-                              <td className={styles.td}>{new Date(c.created_at).toLocaleString()}</td>
+                      <h3 className="text-xl font-semibold mb-2">Comentarios</h3>
+                      <div className="text-sm text-muted-foreground mb-2">
+                        {enriching ? 'Analizando sentimientos…' : (comments?.length ? '' : 'Sin comentarios.')}
+                      </div>
+                      <div className="overflow-x-auto rounded-md border">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-muted">
+                              <th className="p-2 text-left">Fecha</th>
+                              <th className="p-2 text-left">Comentario</th>
+                              <th className="p-2 text-left">Sentimiento</th>
+                              <th className="p-2 text-left">% Positivo</th>
+                              <th className="p-2 text-left">Motivo</th>
                             </tr>
-                          )) : (
-                            <tr><td className={styles.td} colSpan={4}>Sin comentarios.</td></tr>
-                          )}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {(comments ?? []).map((row: any, idx: number) => {
+                              const ai = enriched[idx];
+                              const fecha = new Date(row.creado_en ?? row.fecha ?? row.created_at ?? Date.now());
+                              const pct = ai ? Math.round((ai.positive ?? 0) * 10000) / 100 : 0;
+                              const label = ai?.label ?? 'NEUTRO';
+                              const motivo = ai?.reason ?? '—';
+                              return (
+                                <tr key={idx} className="border-t">
+                                  <td className="p-2 whitespace-nowrap">{fecha.toLocaleString()}</td>
+                                  <td className="p-2 max-w-[48rem]">{row.comment ?? row.comentario}</td>
+                                  <td className="p-2">
+                                    <span className={label==='POSITIVO' ? 'text-green-600 font-medium' : label==='NEGATIVO' ? 'text-red-600 font-medium' : 'text-foreground'}>
+                                      {label}
+                                    </span>
+                                  </td>
+                                  <td className="p-2">{pct.toFixed(2)}%</td>
+                                  <td className="p-2">{motivo}</td>
+                                </tr>
+                              );
+                            })}
+                            {(!comments || comments.length===0) && (
+                              <tr><td className="p-3 text-center text-muted-foreground" colSpan={5}>Sin comentarios.</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
                 </div>
