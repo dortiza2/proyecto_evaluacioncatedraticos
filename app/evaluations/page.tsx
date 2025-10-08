@@ -10,9 +10,8 @@ export const fetchCache = "force-no-store";
 // 2) Base de API + helpers de fetch seguros
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 const API = (p: string) => `${API_BASE}/v1${p}`;
-// URL base y helper según especificación del prompt
-const API_URL = process.env.NEXT_PUBLIC_API_URL!;
-const api = (p: string) => `${API_URL}/v1${p}`;
+// Helper alterno pedido en prompt
+const api = (p: string) => `${API_BASE}/v1${p}`;
 
 async function safeGet<T>(
   path: string,
@@ -52,20 +51,26 @@ async function safePost(
 
 type Teacher = { id: string; name: string };
 
-// Tipos para tablas de estadísticas y comentarios
+// Tipos para tablas según backend (blindando tipos numéricos)
 type StatRow = {
-  teacher_name: string;
+  docente: string;
   materia: string;
-  promedio: number;
-  calificaciones: number;
+  promedio: number | string;
+  calificaciones: number | string;
 };
 type CommentRow = {
-  teacher_name: string;
-  materia?: string;
+  docente: string;
   comentario: string;
-  promedio: number;
+  promedio: number | string;
   creado_en: string;
 };
+
+// Utilidades numéricas para evitar errores de toFixed()
+const num = (x: any): number => {
+  const n = typeof x === 'number' ? x : parseFloat(String(x ?? ''));
+  return Number.isFinite(n) ? n : 0;
+};
+const fmt2 = (x: any) => num(x).toFixed(2);
 
 type Scores = {
   manejo_tema: number;
@@ -128,22 +133,38 @@ export default function EvaluationFormPage() {
     loadTeachers();
   }, []);
 
-  // Cargar estadísticas y comentarios reales
+  // Cargar estadísticas y comentarios reales (arrays directos del backend)
   useEffect(() => {
     let alive = true;
-    const load = async () => {
+    async function loadStats() {
       try {
-        const rs = await fetch(api('/stats'), { cache: 'no-store' });
-        if (!rs.ok) throw 0;
-        const js = await rs.json(); if (alive) setStats(js.items);
-      } catch { if (alive) setIsBackendDown(true); }
+        const r = await fetch(api('/stats'), { cache: 'no-store' });
+        if (!r.ok) throw new Error('stats');
+        const j = await r.json();
+        if (!alive) return;
+        setStats(Array.isArray(j) ? j : []);
+        setIsBackendDown(false);
+      } catch {
+        if (!alive) return;
+        setStats([]);
+        setIsBackendDown(true);
+      }
+    }
+    async function loadComments() {
       try {
-        const rc = await fetch(api('/comments'), { cache: 'no-store' });
-        if (!rc.ok) throw 0;
-        const jc = await rc.json(); if (alive) setComments(jc.items);
-      } catch { if (alive) setIsBackendDown(true); }
-    };
-    load(); return () => { alive = false; };
+        const r = await fetch(api('/comments'), { cache: 'no-store' });
+        if (!r.ok) throw new Error('comments');
+        const j = await r.json();
+        if (!alive) return;
+        setComments(Array.isArray(j) ? j : []);
+      } catch {
+        if (!alive) return;
+        setComments([]);
+      }
+    }
+    loadStats();
+    loadComments();
+    return () => { alive = false; };
   }, []);
 
   // Abrir secciones desde el navbar usando hash y hacer scroll
@@ -375,6 +396,11 @@ export default function EvaluationFormPage() {
                   {showStats && (
                     <div id="stats">
                       <h3 className={styles.tableTitle}>Estadísticas</h3>
+                      {isBackendDown && (
+                        <div className="rounded border p-2 bg-yellow-50" style={{marginBottom:12, color:'#111'}}>
+                          El backend no está disponible temporalmente.
+                        </div>
+                      )}
                       <table className={styles.table}>
                         <thead>
                           <tr>
@@ -385,14 +411,17 @@ export default function EvaluationFormPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {stats?.map((r, i) => (
+                          {(stats ?? []).map((s, i) => (
                             <tr key={i}>
-                              <td className={styles.td}>{r.teacher_name}</td>
-                              <td className={styles.td}>{r.materia || '—'}</td>
-                              <td className={styles.td}>{r.promedio.toFixed(2)}</td>
-                              <td className={styles.td}>{r.calificaciones}</td>
+                              <td className={styles.td}>{s.docente}</td>
+                              <td className={styles.td}>{s.materia}</td>
+                              <td className={styles.td}><span className={`${styles.badge}`}>{fmt2(s.promedio)}</span></td>
+                              <td className={styles.td}>{num(s.calificaciones)}</td>
                             </tr>
-                          )) ?? null}
+                          ))}
+                          {stats && stats.length === 0 && (
+                            <tr><td className={styles.td} colSpan={4}>Sin datos.</td></tr>
+                          )}
                         </tbody>
                       </table>
                     </div>
@@ -410,14 +439,17 @@ export default function EvaluationFormPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {comments?.map((r, i) => (
+                          {(comments ?? []).map((c, i) => (
                             <tr key={i}>
-                              <td className={styles.td}>{r.teacher_name}</td>
-                              <td className={styles.td}>{r.comentario}</td>
-                              <td className={styles.td}>{r.promedio.toFixed(2)}</td>
-                              <td className={styles.td}>{new Date(r.creado_en).toLocaleString()}</td>
+                              <td className={styles.td}>{c.docente}</td>
+                              <td className={styles.td}>{c.comentario}</td>
+                              <td className={styles.td}><span className={`${styles.badge}`}>{fmt2(c.promedio)}</span></td>
+                              <td className={styles.td}>{new Date(c.creado_en).toLocaleString()}</td>
                             </tr>
-                          )) ?? null}
+                          ))}
+                          {comments && comments.length === 0 && (
+                            <tr><td className={styles.td} colSpan={4}>Sin comentarios.</td></tr>
+                          )}
                         </tbody>
                       </table>
                     </div>
