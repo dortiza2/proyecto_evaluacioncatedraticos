@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { analyzeSentimentViaAPI, type SentimentResult } from '@/app/lib/sentiment';
+import { analyzeComments, type BatchAIResult } from '@/app/lib/aiClient';
 import styles from "./Form.module.css";
 
 // 1) Configuración Next: evitar contacto con BACK en build
@@ -13,6 +14,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 const API = (p: string) => `${API_BASE}/v1${p}`;
 // Helper alterno pedido en prompt
 const api = (p: string) => `${API_BASE}/v1${p}`;
+const AI_ENABLED = (process.env.NEXT_PUBLIC_AI_ENABLED ?? 'false') === 'true';
 
 async function safeGet<T>(
   path: string,
@@ -112,6 +114,7 @@ export default function EvaluationFormPage() {
   const [refreshKey, setRefreshKey] = useState(0); // para recargar tras enviar
   const [enriched, setEnriched] = useState<Record<number, SentimentResult>>({});
   const [enriching, setEnriching] = useState(false);
+  const [keywords, setKeywords] = useState<Record<number, string[]>>({});
 
   // Fingerprint opcional y simple (no invasivo)
   const fingerprint = useMemo(() => {
@@ -202,26 +205,63 @@ export default function EvaluationFormPage() {
     return () => { alive = false; };
   }, [refreshKey]);
 
-  // Enriquecer comentarios con sentimiento llamando al util
+  // Enriquecer comentarios con IA (batch si está habilitado) o fallback por comentario
   useEffect(() => {
-    if (!comments || !comments.length) { setEnriched({}); return; }
+    if (!comments || !comments.length) { setEnriched({}); setKeywords({}); return; }
     let alive = true; setEnriching(true);
     (async () => {
-      const out: Record<number, SentimentResult> = {};
-      const queue = comments.map((row, idx) => ({ idx, text: (row as any).comentario ?? row.comment ?? '' }));
-      let i = 0;
-      const run = async () => {
-        while (i < queue.length && alive) {
-          const current = i++;
-          const { idx, text } = queue[current];
-          out[idx] = await analyzeSentimentViaAPI(api, text);
+      try {
+        if (AI_ENABLED && API_BASE) {
+          const texts = (comments ?? []).map((row: any) => (row?.comentario ?? row?.comment ?? ''));
+          const { results } = await analyzeComments(texts);
           if (!alive) return;
-          setEnriched(prev => ({ ...prev, [idx]: out[idx] }));
-          await new Promise(r => setTimeout(r, 60));
+          const out: Record<number, SentimentResult> = {};
+          const kw: Record<number, string[]> = {};
+          (results ?? []).forEach((r: BatchAIResult) => {
+            const raw = (r.sentiment ?? 'NEUTRAL').toString().toUpperCase();
+            const label: SentimentResult['label'] = raw === 'POSITIVE' ? 'POSITIVO' : raw === 'NEGATIVE' ? 'NEGATIVO' : 'NEUTRO';
+            const p = typeof r.score_hint === 'number' ? Math.max(0, Math.min(1, r.score_hint)) : 0.33;
+            out[r.index] = { label, positive: p, neutral: (1 - p) / 2, negative: (1 - p) / 2, reason: r.reasons ?? undefined };
+            if (Array.isArray(r.palabras_clave)) kw[r.index] = r.palabras_clave;
+          });
+          setEnriched(out);
+          setKeywords(kw);
+        } else {
+          const out: Record<number, SentimentResult> = {};
+          let i = 0;
+          const queue = comments.map((row: any, idx) => ({ idx, text: (row as any).comentario ?? row.comment ?? '' }));
+          const run = async () => {
+            while (i < queue.length && alive) {
+              const current = i++;
+              const { idx, text } = queue[current];
+              out[idx] = await analyzeSentimentViaAPI(api, text);
+              if (!alive) return;
+              setEnriched(prev => ({ ...prev, [idx]: out[idx] }));
+              await new Promise(r => setTimeout(r, 60));
+            }
+          };
+          await Promise.all([run(), run()]);
         }
-      };
-      await Promise.all([run(), run()]);
-      if (alive) setEnriching(false);
+      } catch {
+        // Fallback por comentario si el batch falla
+        if (!alive) return;
+        const out: Record<number, SentimentResult> = {};
+        let i = 0;
+        const queue = comments.map((row: any, idx) => ({ idx, text: (row as any).comentario ?? row.comment ?? '' }));
+        const run = async () => {
+          while (i < queue.length && alive) {
+            const current = i++;
+            const { idx, text } = queue[current];
+            out[idx] = await analyzeSentimentViaAPI(api, text);
+            if (!alive) return;
+            setEnriched(prev => ({ ...prev, [idx]: out[idx] }));
+            await new Promise(r => setTimeout(r, 60));
+          }
+        };
+        await Promise.all([run(), run()]);
+      } finally {
+        if (alive) setEnriching(false);
+      }
     })();
     return () => { alive = false; };
   }, [comments]);
@@ -491,6 +531,7 @@ export default function EvaluationFormPage() {
                               <th className="p-2 text-left">Sentimiento</th>
                               <th className="p-2 text-left">% Positivo</th>
                               <th className="p-2 text-left">Motivo</th>
+                              <th className="p-2 text-left">Palabras clave</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -500,6 +541,7 @@ export default function EvaluationFormPage() {
                               const pct = ai ? Math.round((ai.positive ?? 0) * 10000) / 100 : 0;
                               const label = ai?.label ?? 'NEUTRO';
                               const motivo = ai?.reason ?? '—';
+                              const palabras = keywords[idx];
                               return (
                                 <tr key={idx} className="border-t">
                                   <td className="p-2 whitespace-nowrap">{fecha.toLocaleString()}</td>
@@ -511,11 +553,12 @@ export default function EvaluationFormPage() {
                                   </td>
                                   <td className="p-2">{pct.toFixed(2)}%</td>
                                   <td className="p-2">{motivo}</td>
+                                  <td className="p-2">{palabras?.length ? palabras.join(', ') : '—'}</td>
                                 </tr>
                               );
                             })}
                             {(!comments || comments.length===0) && (
-                              <tr><td className="p-3 text-center text-muted-foreground" colSpan={5}>Sin comentarios.</td></tr>
+                              <tr><td className="p-3 text-center text-muted-foreground" colSpan={6}>Sin comentarios.</td></tr>
                             )}
                           </tbody>
                         </table>
