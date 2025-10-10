@@ -38,8 +38,9 @@ function toLabel(p: number): Label {
 }
 
 export async function analyzeSentimentViaAPI(api: (p:string)=>string, text: string): Promise<SentimentResult> {
+  // Hotfix: no llamar Azure; usar backend propio si se requiere análisis por comentario (no batch)
   try {
-    const res = await fetch(api('/ai/sentiment/azure'), {
+    const res = await fetch(api('/ai/sentiment/simple'), {
       method:'POST', headers:{ 'Content-Type':'application/json' },
       body: JSON.stringify({ text })
     });

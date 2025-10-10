@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { analyzeSentimentViaAPI, type SentimentResult } from '@/app/lib/sentiment';
-import { analyzeComments, type BatchAIResult } from '@/app/lib/aiClient';
+import { analyzeComments } from '@/src/lib/ai/client';
 import styles from "./Form.module.css";
 
 // 1) Configuración Next: evitar contacto con BACK en build
@@ -14,7 +13,15 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 const API = (p: string) => `${API_BASE}/v1${p}`;
 // Helper alterno pedido en prompt
 const api = (p: string) => `${API_BASE}/v1${p}`;
-const AI_ENABLED = (process.env.NEXT_PUBLIC_AI_ENABLED ?? 'false') === 'true';
+
+// Tipo mínimo local para resultados de IA en la tabla
+type SentimentResult = {
+  label: 'POSITIVO' | 'NEGATIVO' | 'NEUTRO';
+  positive: number;
+  neutral: number;
+  negative: number;
+  reason?: string;
+};
 
 async function safeGet<T>(
   path: string,
@@ -23,7 +30,7 @@ async function safeGet<T>(
   if (!API_BASE) return { ok: false, data: fallback, offline: true };
   const attempt = async () => {
     const ctrl = new AbortController();
-    const id = setTimeout(() => ctrl.abort(), 4000);
+    const id = setTimeout(() => ctrl.abort(), 10000);
     try {
       const res = await fetch(API(path), { cache: "no-store", signal: ctrl.signal });
       clearTimeout(id);
@@ -149,58 +156,25 @@ export default function EvaluationFormPage() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      try {
-        // con reintento simple para cold start
-        const fetchStats = async () => {
-          try {
-            const r = await fetch(api('/stats'), { cache: 'no-store' });
-            if (!r.ok) throw new Error('bad');
-            return await r.json();
-          } catch {
-            await new Promise((r) => setTimeout(r, 1200));
-            const r2 = await fetch(api('/stats'), { cache: 'no-store' });
-            if (!r2.ok) throw new Error('bad');
-            return await r2.json();
-          }
-        };
-        const data = await fetchStats();
-        if (!alive) return;
-        setStats(Array.isArray(data) ? data.map((d: any) => ({
-          teacher: d.teacher,
-          materia: d.materia ?? null,
-          promedio: Number(d.promedio),
-          calificaciones: Number(d.calificaciones),
-        })) : []);
-      } catch {
-        if (!alive) return;
-        setStats([]);
-      }
+      // Estadísticas
+      const rStats = await safeGet<any[]>('/stats', []);
+      if (!alive) return;
+      setStats((rStats.ok && Array.isArray(rStats.data)) ? rStats.data.map((d: any) => ({
+        teacher: d.teacher,
+        materia: d.materia ?? null,
+        promedio: Number(d.promedio),
+        calificaciones: Number(d.calificaciones),
+      })) : []);
 
-      try {
-        const fetchComments = async () => {
-          try {
-            const r2 = await fetch(api('/comments'), { cache: 'no-store' });
-            if (!r2.ok) throw new Error('bad');
-            return await r2.json();
-          } catch {
-            await new Promise((r) => setTimeout(r, 1200));
-            const r3 = await fetch(api('/comments'), { cache: 'no-store' });
-            if (!r3.ok) throw new Error('bad');
-            return await r3.json();
-          }
-        };
-        const data2 = await fetchComments();
-        if (!alive) return;
-        setComments(Array.isArray(data2) ? data2.map((d: any) => ({
-          teacher: d.teacher,
-          comment: d.comment,
-          promedio: Number(d.promedio),
-          created_at: d.created_at,
-        })) : []);
-      } catch {
-        if (!alive) return;
-        setComments([]);
-      }
+      // Comentarios
+      const rComments = await safeGet<any[]>('/comments', []);
+      if (!alive) return;
+      setComments((rComments.ok && Array.isArray(rComments.data)) ? rComments.data.map((d: any) => ({
+        teacher: d.teacher,
+        comment: d.comment,
+        promedio: Number(d.promedio),
+        created_at: d.created_at,
+      })) : []);
     })();
     return () => { alive = false; };
   }, [refreshKey]);
@@ -211,54 +185,28 @@ export default function EvaluationFormPage() {
     let alive = true; setEnriching(true);
     (async () => {
       try {
-        if (AI_ENABLED && API_BASE) {
-          const texts = (comments ?? []).map((row: any) => (row?.comentario ?? row?.comment ?? ''));
-          const { results } = await analyzeComments(texts);
-          if (!alive) return;
-          const out: Record<number, SentimentResult> = {};
-          const kw: Record<number, string[]> = {};
-          (results ?? []).forEach((r: BatchAIResult) => {
-            const raw = (r.sentiment ?? 'NEUTRAL').toString().toUpperCase();
-            const label: SentimentResult['label'] = raw === 'POSITIVE' ? 'POSITIVO' : raw === 'NEGATIVE' ? 'NEGATIVO' : 'NEUTRO';
-            const p = typeof r.score_hint === 'number' ? Math.max(0, Math.min(1, r.score_hint)) : 0.33;
-            out[r.index] = { label, positive: p, neutral: (1 - p) / 2, negative: (1 - p) / 2, reason: r.reasons ?? undefined };
-            if (Array.isArray(r.palabras_clave)) kw[r.index] = r.palabras_clave;
-          });
-          setEnriched(out);
-          setKeywords(kw);
-        } else {
-          const out: Record<number, SentimentResult> = {};
-          let i = 0;
-          const queue = comments.map((row: any, idx) => ({ idx, text: (row as any).comentario ?? row.comment ?? '' }));
-          const run = async () => {
-            while (i < queue.length && alive) {
-              const current = i++;
-              const { idx, text } = queue[current];
-              out[idx] = await analyzeSentimentViaAPI(api, text);
-              if (!alive) return;
-              setEnriched(prev => ({ ...prev, [idx]: out[idx] }));
-              await new Promise(r => setTimeout(r, 60));
-            }
-          };
-          await Promise.all([run(), run()]);
-        }
-      } catch {
-        // Fallback por comentario si el batch falla
+        const texts = (comments ?? []).map((row: any) => (row?.comentario ?? row?.comment ?? ''));
+        const { results } = await analyzeComments(texts, 'es');
         if (!alive) return;
         const out: Record<number, SentimentResult> = {};
-        let i = 0;
-        const queue = comments.map((row: any, idx) => ({ idx, text: (row as any).comentario ?? row.comment ?? '' }));
-        const run = async () => {
-          while (i < queue.length && alive) {
-            const current = i++;
-            const { idx, text } = queue[current];
-            out[idx] = await analyzeSentimentViaAPI(api, text);
-            if (!alive) return;
-            setEnriched(prev => ({ ...prev, [idx]: out[idx] }));
-            await new Promise(r => setTimeout(r, 60));
-          }
-        };
-        await Promise.all([run(), run()]);
+        const kw: Record<number, string[]> = {};
+        (results ?? []).forEach((r: any) => {
+          const raw = (r.sentiment ?? 'neutral').toString().toUpperCase();
+          const label: SentimentResult['label'] = raw === 'POSITIVE' ? 'POSITIVO' : raw === 'NEGATIVE' ? 'NEGATIVO' : 'NEUTRO';
+          const p = typeof r.score_hint === 'number' ? Math.max(0, Math.min(1, r.score_hint)) : 0.33;
+          out[r.index] = { label, positive: p, neutral: (1 - p) / 2, negative: (1 - p) / 2, reason: r.reasons ?? undefined };
+          if (Array.isArray(r.palabras_clave)) kw[r.index] = r.palabras_clave;
+        });
+        setEnriched(out);
+        setKeywords(kw);
+      } catch {
+        // Si falla la IA, marcamos estado neutro y seguimos sin Azure
+        if (!alive) return;
+        const out: Record<number, SentimentResult> = {};
+        (comments ?? []).forEach((row: any, idx: number) => {
+          out[idx] = { label: 'NEUTRO', positive: 0.33, neutral: 0.34, negative: 0.33 };
+        });
+        setEnriched(out);
       } finally {
         if (alive) setEnriching(false);
       }

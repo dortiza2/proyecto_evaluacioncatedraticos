@@ -1,16 +1,21 @@
 {
   "pages": {
-    "/evaluations/page": [
+    "/evaluations/comments/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/css/app/evaluations/page.css",
-      "static/chunks/app/evaluations/page.js"
+      "static/chunks/app/evaluations/comments/page.js"
     ],
     "/layout": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/css/app/layout.css",
       "static/chunks/app/layout.js"
+    ],
+    "/evaluations/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/css/app/evaluations/page.css",
+      "static/chunks/app/evaluations/page.js"
     ],
     "/_not-found/page": [
       "static/chunks/webpack.js",
