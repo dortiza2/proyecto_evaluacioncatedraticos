@@ -4,17 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 import { analyzeComments } from '@/src/lib/ai/client';
 import styles from "./Form.module.css";
 
-// 1) Configuración Next: evitar contacto con BACK en build
+// Configuración Next: evitar contacto con BACK en build
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
-// 2) Base de API + helpers de fetch seguros
+// Base de API + helpers de fetch seguros
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 const API = (p: string) => `${API_BASE}/v1${p}`;
-// Helper alterno pedido en prompt
+// Helper alterno
 const api = (p: string) => `${API_BASE}/v1${p}`;
 
-// Tipo mínimo local para resultados de IA en la tabla
+// Tipo para resultados en la tabla
 type SentimentResult = {
   label: 'POSITIVO' | 'NEGATIVO' | 'NEUTRO';
   positive: number;
@@ -75,8 +75,8 @@ async function safePost(
 
 type Teacher = { id: string; name: string };
 
-// Tipos para tablas según backend (blindando tipos numéricos)
-// Tipos para tablas según prompt
+// Tipos para tablas (blindando tipos numéricos)
+// Tipos para tablas
 type StatRow = { teacher: string; materia: string | null; promedio: number; calificaciones: number };
 type CommentRow = { teacher: string; comment: string; promedio: number; created_at: string };
 
@@ -152,7 +152,7 @@ export default function EvaluationFormPage() {
     loadTeachers();
   }, []);
 
-  // Cargar estadísticas y comentarios reales (arrays directos del backend), refrescando por refreshKey
+  // Cargar estadísticas y comentarios reales (arrays del backend), refrescando por refreshKey
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -179,7 +179,7 @@ export default function EvaluationFormPage() {
     return () => { alive = false; };
   }, [refreshKey]);
 
-  // Enriquecer comentarios con IA (batch si está habilitado) o fallback por comentario
+  // Agregar análisis a los comentarios o usar valores por defecto
   useEffect(() => {
     if (!comments || !comments.length) { setEnriched({}); setKeywords({}); return; }
     let alive = true; setEnriching(true);
@@ -200,7 +200,7 @@ export default function EvaluationFormPage() {
         setEnriched(out);
         setKeywords(kw);
       } catch {
-        // Si falla la IA, marcamos estado neutro y seguimos sin Azure
+        // Si falla, dejamos estado neutro
         if (!alive) return;
         const out: Record<number, SentimentResult> = {};
         (comments ?? []).forEach((row: any, idx: number) => {
